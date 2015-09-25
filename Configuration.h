@@ -101,11 +101,11 @@
 #define DEBUG_MESSAGES
 
 //Speed for autocalibration travel and probing moves
-#define AUTOCAL_TRAVELRATE 200 // mm/sec
-#define AUTOCAL_PROBERATE 10 // mm/sec
+#define AUTOCAL_TRAVELRATE 250  // mm/sec
+#define AUTOCAL_PROBERATE 50 // mm/sec
 
 //Amount to lift head after probing a point
-#define AUTOCAL_PROBELIFT 2 // mm
+#define AUTOCAL_PROBELIFT 1 // mm
 
 // Precision for G30 delta autocalibration function (calibrate to within +/- this value)
 #define AUTOCALIBRATION_PRECISION 0.05// mm
@@ -377,7 +377,7 @@ const bool Z_MAX_ENDSTOP_INVERTING = true; // set to true to invert the logic of
 // For deltabots this means top and center of the cartesian print volume.
 #define MANUAL_X_HOME_POS 0
 #define MANUAL_Y_HOME_POS 0
-#define MANUAL_Z_HOME_POS 873  // For delta: Distance between nozzle and print surface after homing.
+#define MANUAL_Z_HOME_POS 857.50 // For delta: Distance between nozzle and print surface after homing.
 
 //// MOVEMENT SETTINGS
 #define NUM_AXIS 4 // The axis order in all axis related arrays is X, Y, Z, E
