@@ -83,7 +83,7 @@
 #define DELTA_SEGMENTS_PER_SECOND 115
 
 // Center-to-center distance of the holes in the diagonal push rods.
-#define DEFAULT_DELTA_DIAGONAL_ROD 488.3 // mm
+#define DEFAULT_DELTA_DIAGONAL_ROD 217.5 // mm
 
 // Horizontal offset from middle of printer to smooth rod center.
 #define DELTA_SMOOTH_ROD_OFFSET 308.25 // mm
@@ -95,14 +95,14 @@
 #define DELTA_CARRIAGE_OFFSET 28 // mm
 
 // Effective horizontal distance bridged by diagonal push rods.
-#define DEFAULT_DELTA_RADIUS 258.94
+#define DEFAULT_DELTA_RADIUS 260.67
 
 //Uncomment to enable autocalibration debug messages
 #define DEBUG_MESSAGES
 
 //Speed for autocalibration travel and probing moves
-#define AUTOCAL_TRAVELRATE 250 // mm/sec
-#define AUTOCAL_PROBERATE 20 // mm/sec
+#define AUTOCAL_TRAVELRATE 200 // mm/sec
+#define AUTOCAL_PROBERATE 10 // mm/sec
 
 //Amount to lift head after probing a point
 #define AUTOCAL_PROBELIFT 2 // mm
@@ -114,9 +114,9 @@
 #define BED_DIAMETER 280 // mm
 
 //Endstop Offset Adjustment - All values are in mm and must be negative (to move down away from endstop switches) 
-#define TOWER_A_ENDSTOP_ADJ -9.93 // Front Left Tower
-#define TOWER_B_ENDSTOP_ADJ -5.60 // Front Right Tower
-#define TOWER_C_ENDSTOP_ADJ -1.22 // Rear Tower
+#define TOWER_A_ENDSTOP_ADJ -6.760 // Front Left Tower
+#define TOWER_B_ENDSTOP_ADJ -6.090 // Front Right Tower
+#define TOWER_C_ENDSTOP_ADJ 0.680 // Rear Tower
 
 //Tower Position Adjustment - Adj x Degrees around delta radius (- move clockwise / + move anticlockwise)
 #define TOWER_A_POSITION_ADJ 0 //Front Left Tower
@@ -377,7 +377,7 @@ const bool Z_MAX_ENDSTOP_INVERTING = true; // set to true to invert the logic of
 // For deltabots this means top and center of the cartesian print volume.
 #define MANUAL_X_HOME_POS 0
 #define MANUAL_Y_HOME_POS 0
-#define MANUAL_Z_HOME_POS 863  // For delta: Distance between nozzle and print surface after homing.
+#define MANUAL_Z_HOME_POS 873  // For delta: Distance between nozzle and print surface after homing.
 
 //// MOVEMENT SETTINGS
 #define NUM_AXIS 4 // The axis order in all axis related arrays is X, Y, Z, E

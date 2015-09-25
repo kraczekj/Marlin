@@ -5,7 +5,7 @@
  Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
 
  This program is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
+ it under the terms of the GNU General Public License as published
  the Free Software Foundation, either version 3 of the License, or
  (at your option) any later version.
 
@@ -187,6 +187,7 @@ float add_homeing[3]={0,0,0};
   float DELTA_DIAGONAL_ROD2_2;
   float DELTA_DIAGONAL_ROD3_2;
   float ac_prec = AUTOCALIBRATION_PRECISION;
+  float start_prec = 0.01;
   float bed_radius = BED_DIAMETER / 2;
   float delta_tower1_x, delta_tower1_y;
   float delta_tower2_x, delta_tower2_y;
@@ -897,15 +898,6 @@ void set_delta_constants()
   DELTA_DIAGONAL_ROD3_2 = pow(delta_diagonal_rod + diagrod_adj[2],2);
   
   // Effective X/Y positions of the three vertical towers.
-  /*
-  delta_tower1_x = (-SIN_60 * delta_radius) + tower_adj[0]; // front left tower + xa
-  delta_tower1_y = (-COS_60 * delta_radius) - tower_adj[0] ;
-  delta_tower2_x = -(-SIN_60 * delta_radius) + tower_adj[1]; // front right tower + xb
-  delta_tower2_y = (-COS_60 * delta_radius) + tower_adj[1]; // 
-  delta_tower3_x = tower_adj[2] ; // back middle tower + xc
-  delta_tower3_y = -2 * (-COS_60 * delta_radius);  
-  */
-  
   delta_tower1_x = (delta_radius + tower_adj[3]) * cos((210 + tower_adj[0]) * PI/180); // front left tower
   delta_tower1_y = (delta_radius + tower_adj[3]) * sin((210 + tower_adj[0]) * PI/180); 
   delta_tower2_x = (delta_radius + tower_adj[4]) * cos((330 + tower_adj[1]) * PI/180); // front right tower
@@ -956,10 +948,16 @@ void apply_endstop_adjustment(float x_endstop, float y_endstop, float z_endstop)
 }
 
 void adj_endstops() {
-  boolean x_done = false;
-  boolean y_done = false;
-  boolean z_done = false; 
+  boolean x_done;
+  boolean y_done;
+  boolean z_done; 
+  boolean accuracy_fail;
+  int adj_attempts;
+  float adjdone_vector;
   float prv_bed_level_x, prv_bed_level_y, prv_bed_level_z;
+
+  adj_attempts = 0; 
+  adjdone_vector = start_prec; 
 
   do 
     {  
@@ -981,40 +979,50 @@ void adj_endstops() {
     SERIAL_PROTOCOL_F(bed_level_z, 4);
     SERIAL_ECHO(" (adj:");
     SERIAL_PROTOCOL_F(endstop_adj[2], 4);
-    SERIAL_ECHOLN(")");
-  
+    SERIAL_ECHO(") Prec:");
+    SERIAL_PROTOCOL_F(adjdone_vector,3);
+    SERIAL_ECHO(" Tries:");
+    SERIAL_ECHO(adj_attempts);
+    SERIAL_ECHOLN("");
+    
+    x_done = false;
+    y_done = false;
+    z_done = false;
+    accuracy_fail = false;
+    
     if ((bed_level_x >= -ac_prec) and (bed_level_x <= ac_prec)) 
       {
-      x_done = true;
-      SERIAL_ECHO("X=OK");
+      //Done to within acprec .. but done within adjdone_vector?   
+      if ((bed_level_x >= -adjdone_vector) and (bed_level_x <= adjdone_vector)) x_done = true; else accuracy_fail = true;
       }
-    else
+      
+    if ((bed_level_y >= -ac_prec) and (bed_level_y <= ac_prec)) 
       {
-      x_done = false;
-      SERIAL_ECHO("X=ERROR");
+      //Done to within acprec .. but done within adjdone_vector?   
+      if ((bed_level_y >= -adjdone_vector) and (bed_level_y <= adjdone_vector)) y_done = true; else accuracy_fail = true;
       }
 
-    if ((bed_level_y >= -ac_prec) and (bed_level_y <= ac_prec))
+    if ((bed_level_z >= -ac_prec) and (bed_level_z <= ac_prec)) 
       {
-      y_done = true;
-      SERIAL_ECHO(" Y=OK");
-      }
-    else
-      {
-      y_done = false;
-      SERIAL_ECHO(" Y=ERROR");
+      //Done to within acprec .. but done within adjdone_vector?   
+      if ((bed_level_z >= -adjdone_vector) and (bed_level_z <= adjdone_vector)) z_done = true; else accuracy_fail = true;
       }
 
-    if ((bed_level_z >= -ac_prec) and (bed_level_z <= ac_prec))
-      {
-      z_done = true;
-      SERIAL_ECHO(" Z=OK");
-      }
-    else
-      {
-      z_done = false;
-      SERIAL_ECHO(" Z=ERROR");
-      }
+      if (x_done == true) SERIAL_ECHO("X=OK "); else SERIAL_ECHO("X=ERROR ");
+      if (y_done == true) SERIAL_ECHO("Y=OK "); else SERIAL_ECHO("Y=ERROR ");
+      if (z_done == true) SERIAL_ECHO("Z=OK "); else SERIAL_ECHO("Z=ERROR ");
+     
+      if (accuracy_fail == true)
+        {
+        adj_attempts ++; 
+        if (adj_attempts > 3) 
+          { 
+          start_prec = adjdone_vector; // set start precion for next adjustment run
+          adjdone_vector += 0.01; 
+          adj_attempts = 0; 
+          }
+        }
+          
     } while (((x_done == false) or (y_done == false) or (z_done == false))); // and (endstop_adj_err == false));
       
     float high_endstop = 0;
@@ -1038,218 +1046,13 @@ void adj_endstops() {
       }
     bed_safe_z = 20;
 }
-void adj_endstops_alt1(){
-  float adj_x_prv, adj_y_prv, adj_z_prv;
-  float diff_x_prv, diff_y_prv, diff_z_prv;
-  float adj_r_target,adj_r, high_endstop;
-  float diff_x = 0;
-  float diff_y = 0;
-  float diff_z = 0;
-  float adj_x = 0;
-  float adj_y = 0;
-  float adj_z = 0;
-  float adj_x_mag =0.5;
-  float adj_y_mag = 0.5;
-  float adj_z_mag = 0.5;
-  
-  adj_r_target = bed_level_x + bed_level_y + bed_level_z / 3;
-  //set inital direction and magnitude for delta radius adjustment
-  adj_r = -2;
-  if (adj_r_target > bed_level_c) adj_r = 2;
-   //!!
-  saved_endstop_adj[X_AXIS] = endstop_adj[X_AXIS];
-  saved_endstop_adj[Y_AXIS] = endstop_adj[Y_AXIS];
-  saved_endstop_adj[Z_AXIS] = endstop_adj[Z_AXIS];
-  
-  do 
-    { 
-    //Adjust delta radius  
-//    delta_radius += adj_r;
-//    set_delta_constants();
-     
-    endstop_adj[0] += adj_x; // / 1.05;
-    endstop_adj[1] += adj_y; //(bed_level_oy - bed_level_y) / 1.05;
-    endstop_adj[2] += adj_z; //(bed_level_oz - bed_level_z) / 1.05;
-    
-    calculate_delta(current_position);
-    plan_set_position(delta[X_AXIS] - (endstop_adj[X_AXIS] - saved_endstop_adj[X_AXIS]) , delta[Y_AXIS] - (endstop_adj[Y_AXIS] - saved_endstop_adj[Y_AXIS]), delta[Z_AXIS] - (endstop_adj[Z_AXIS] - saved_endstop_adj[Z_AXIS]), current_position[E_AXIS]);
-                  
-    saved_endstop_adj[X_AXIS] = endstop_adj[X_AXIS];
-    saved_endstop_adj[Y_AXIS] = endstop_adj[Y_AXIS];
-    saved_endstop_adj[Z_AXIS] = endstop_adj[Z_AXIS];
-       
-                        
-    //bed_probe_all();
-    //bed_level_c = probe_bed(0.0, 0.0);      
-    //bed_level_z = probe_bed(0.0, bed_radius);
-    //bed_level_oy = probe_bed(-SIN_60 * bed_radius, COS_60 * bed_radius);
-    bed_level_x = probe_bed(-SIN_60 * bed_radius, -COS_60 * bed_radius);
-    //bed_level_oz = probe_bed(0.0, -bed_radius);
-    //bed_level_y = probe_bed(SIN_60 * bed_radius, -COS_60 * bed_radius);
-    bed_level_ox = probe_bed(SIN_60 * bed_radius, COS_60 * bed_radius);
-    
-    //adj_r_target = bed_level_x + bed_level_y + bed_level_z / 3;
-    //Adjust delta radius
-    //if (((adj_r > 0) and (bed_level_c > adj_r_target)) or ((adj_r < 0) and (bed_level_c < adj_r_target))) adj_r = -(adj_r / 2);
-    
-    adj_x_prv = adj_x;
-    diff_x_prv = diff_x;
-    adj_x = 0;
-    diff_x = abs(bed_level_x - bed_level_ox);
-    if ((diff_x > diff_x_prv) and (diff_x_prv !=0)) adj_x_mag = adj_x_mag * 2;
-    if (bed_level_x < bed_level_ox) adj_x = -adj_x_mag;
-    if (bed_level_x > bed_level_ox) adj_x = adj_x_mag;
-    if (((adj_x > 0) and (adj_x_prv < 0)) or (adj_x < 0) and (adj_x_prv > 0))
-      {
-        if (adj_x_mag > 0.125)
-          {
-          adj_x = adj_x / 2;
-          adj_x_mag = adj_x_mag /2;
-          }
-      }
-    SERIAL_ECHO("x:");
-    SERIAL_PROTOCOL_F(bed_level_x,4);
-    SERIAL_ECHO(" ox:");
-    SERIAL_PROTOCOL_F(bed_level_ox,4);
-    SERIAL_ECHO(" adj_x:");
-    SERIAL_PROTOCOL_F(adj_x,4);
-    SERIAL_ECHOLN("");
-      
-    bed_level_y = probe_bed(SIN_60 * bed_radius, -COS_60 * bed_radius);
-    bed_level_oy = probe_bed(-SIN_60 * bed_radius, COS_60 * bed_radius);
-       
-    adj_y_prv = adj_y;
-    adj_y = 0;
-    diff_y_prv = diff_y;
-    diff_y = abs(bed_level_y - bed_level_oy);
-    if ((diff_y > diff_y_prv) and (diff_y_prv != 0)) adj_y_mag = adj_y_mag * 2;
-    if (bed_level_y < bed_level_oy) adj_y = -adj_y_mag;
-    if (bed_level_y > bed_level_oy) adj_y = adj_y_mag;
-    if (((adj_y > 0) and (adj_y_prv < 0)) or (adj_y < 0) and (adj_y_prv > 0))
-      {
-        if (adj_y_mag > 0.125)
-          {
-          adj_y = adj_y / 2;
-          adj_y_mag = adj_y_mag /2;
-          }
-      }
-    SERIAL_ECHO("y:");
-    SERIAL_PROTOCOL_F(bed_level_y,4);
-    SERIAL_ECHO(" oy:");
-    SERIAL_PROTOCOL_F(bed_level_oy,4);
-    SERIAL_ECHO(" adj_y:");
-    SERIAL_PROTOCOL_F(adj_y,4);
-    SERIAL_ECHOLN("");
-    
-
-    bed_level_z = probe_bed(0.0, bed_radius);
-    bed_level_oz = probe_bed(0.0, -bed_radius);
-    
-    adj_z_prv = adj_z;
-    adj_z = 0;
-    diff_z_prv = diff_z;
-    diff_z = abs(bed_level_z - bed_level_oz);
-    if ((diff_z > diff_z_prv) and (diff_z_prv != 0)) adj_z_mag = adj_z_mag * 2;
-    if (bed_level_z < bed_level_oz) adj_z = -adj_z_mag;
-    if (bed_level_z > bed_level_oz) adj_z = adj_z_mag;
-    if (((adj_z > 0) and (adj_z_prv < 0)) or (adj_z < 0) and (adj_z_prv > 0))
-      {
-        if (adj_z_mag > 0.125)
-          {
-          adj_z = adj_z / 2;
-          adj_z_mag = adj_z_mag /2;
-          }
-      }
-    SERIAL_ECHO("z:");
-    SERIAL_PROTOCOL_F(bed_level_z,4);
-    SERIAL_ECHO(" oz:");
-    SERIAL_PROTOCOL_F(bed_level_oz,4);
-    SERIAL_ECHO(" adj_z:");
-    SERIAL_PROTOCOL_F(adj_z,4);
-    SERIAL_ECHOLN("");
-    
-    high_endstop = 0;
-    for(int x=0; x<3; x++) if (endstop_adj[x] > high_endstop) high_endstop = endstop_adj[x]; 
-        
-    if (high_endstop > 0)
-      {
-      SERIAL_ECHOPAIR("Reducing Build height by ",high_endstop);
-      SERIAL_ECHOLN("");
-      for(int x=0; x<3; x++)
-        {
-        endstop_adj[x] -= high_endstop;  
-        }    
-      max_pos[Z_AXIS] -= high_endstop;      
-      set_delta_constants();
-      }
-    } while((diff_x > 0.4) or (diff_y > 0.4) or (diff_z > 0.4));
-//    } while((bed_level_x < bed_level_ox - ac_prec) or (bed_level_x > bed_level_ox + ac_prec)
-//      or (bed_level_y < bed_level_oy - ac_prec) or (bed_level_y > bed_level_oy + ac_prec)
-//      or (bed_level_z < bed_level_oz - ac_prec) or (bed_level_z > bed_level_oz + ac_prec));
-}
-/*
-int fix_tower_errors()
-{
-boolean t1_err, t2_err, t3_err;
-float saved_tower_adj[6];
-float err_tower;
-//float diff_x = abs(bed_level_x - bed_level_ox);
-float diff_x = bed_level_x - bed_level_ox;
-float low_diff = diff_x;
-//float diff_y = abs(bed_level_y - bed_level_oy);
-float diff_y = bed_level_y - bed_level_oy;
-if (diff_y < low_diff) low_diff = diff_y;
-//float diff_z = abs(bed_level_z - bed_level_oz);
-float diff_z = bed_level_z - bed_level_oz;
-if (diff_z < low_diff) low_diff = diff_z;
-for (int i=0; i<6; i++) saved_tower_adj[i] = tower_adj[i];
-t1_err = true;
-t2_err = true;
-t3_err = true;
-if (diff_x - low_diff < ac_prec/2) t1_err = false;
-if (diff_y - low_diff < ac_prec/2) t2_err = false;
-if (diff_z - low_diff < ac_prec/2) t3_err = false;
-err_tower = 0;
-//Multiple tower errors
-if ((t1_err == false) and (t2_err == true) and (t3_err == true)) err_tower = 1;
-if ((t1_err == true) and (t2_err == false) and (t3_err == true)) err_tower = 2;
-if ((t1_err == true) and (t2_err == true) and (t3_err == false)) err_tower = 3;
-//Single tower error
-if ((t1_err == true) and (t2_err == false) and (t3_err == false)) err_tower = 1;
-if ((t1_err == false) and (t2_err == true) and (t3_err == false)) err_tower = 2;
-if ((t1_err == false) and (t2_err == false) and (t3_err == true)) err_tower = 3;
-SERIAL_ECHO("t1:");
-if (t1_err == true) SERIAL_ECHO("Err"); else SERIAL_ECHO("OK");
-SERIAL_ECHO(" t2:");
-if (t2_err == true) SERIAL_ECHO("Err"); else SERIAL_ECHO("OK");
-SERIAL_ECHO(" t3:");
-if (t3_err == true) SERIAL_ECHO("Err"); else SERIAL_ECHO("OK");
-SERIAL_ECHOLN("");
-if (err_tower == 0)
-{
-SERIAL_ECHOLN("Tower geometry OK");
-}
-else
-{
-SERIAL_ECHO("Tower");
-SERIAL_ECHO(int(err_tower));
-SERIAL_ECHOLN(" Error: Adjusting");
-adj_tower_radius(err_tower);
-adj_tower_delta(err_tower);
-}
-//Set return value to indicate if anything has been changed (0 = no change)
-int retval = 0;
-for (int i=0; i<6; i++) if (saved_tower_adj[i] != tower_adj[i]) retval++;
-return retval;
-}
-*/
 
 int fix_tower_errors()
 {
     boolean t1_err, t2_err, t3_err;
     boolean xy_equal, xz_equal, yz_equal;
     float saved_tower_adj[6];
-    float err_tower;
+    int err_tower;
     float low_diff, high_diff;
     float x_diff, y_diff, z_diff;
     float xy_diff, yz_diff, xz_diff;
@@ -1266,9 +1069,9 @@ int fix_tower_errors()
     z_diff = abs(bed_level_z - bed_level_oz);
     if (z_diff > high_diff) high_diff = z_diff;
     
-    if (x_diff <= ac_prec) t1_err = false; else t1_err = true;
-    if (y_diff <= ac_prec) t2_err = false; else t2_err = true;
-    if (z_diff <= ac_prec) t3_err = false; else t3_err = true;    
+    if (x_diff <= start_prec) t1_err = false; else t1_err = true;
+    if (y_diff <= start_prec) t2_err = false; else t2_err = true;
+    if (z_diff <= start_prec) t3_err = false; else t3_err = true;    
     
     SERIAL_ECHO("x_diff = ");
     SERIAL_PROTOCOL_F(x_diff,5);
@@ -1287,9 +1090,9 @@ int fix_tower_errors()
     xy_equal = false;
     xz_equal = false;
     yz_equal = false;
-    if (abs(x_diff - y_diff) <= ac_prec) xy_equal = true;
-    if (abs(x_diff - z_diff) <= ac_prec) xz_equal = true;
-    if (abs(y_diff - z_diff) <= ac_prec) yz_equal = true; 
+    if (abs(x_diff - y_diff) <= start_prec) xy_equal = true;
+    if (abs(x_diff - z_diff) <= start_prec) xz_equal = true;
+    if (abs(y_diff - z_diff) <= start_prec) yz_equal = true; 
     SERIAL_ECHO("xy_equal = ");
     if (xy_equal == true) SERIAL_ECHOLN("true"); else SERIAL_ECHOLN("false");
     SERIAL_ECHO("xz_equal = ");
@@ -1307,7 +1110,7 @@ int fix_tower_errors()
     SERIAL_ECHO("Opp Range = ");
     SERIAL_PROTOCOL_F(high_opp - low_opp,5);
     SERIAL_ECHOLN("");
-    if (high_opp - low_opp  < ac_prec) 
+    if (high_opp - low_opp  < start_prec) 
       {
       SERIAL_ECHOLN("Opposite Points within Limits - Adjustment not required");
       t1_err = false;
@@ -1318,16 +1121,14 @@ int fix_tower_errors()
     //All Towers have errors 
     if ((t1_err == true) and (t2_err == true) and (t3_err == true))
       { 
-      //if ((x_diff <= y_diff + ac_prec) and (x_diff > y_diff - ac_prec)) xy_equal = true;
-      //if ((x_diff <= z_diff + ac_prec) and (x_diff > z_diff - ac_prec)) xz_equal = true;
-      //if ((y_diff <= z_diff + ac_prec) and (y_diff > z_diff - ac_prec)) yz_equal = true;
       if ((xy_equal == false) or (xz_equal == false) or (yz_equal == false))
         {
         //Errors not equal .. select the tower that needs to be adjusted   
         if (high_diff == x_diff) err_tower = 1;
         if (high_diff == y_diff) err_tower = 2;      
         if (high_diff == z_diff) err_tower = 3;
-        SERIAL_ECHOPAIR("Tower ", err_tower);
+        SERIAL_ECHO("Tower ");
+        SERIAL_ECHO(err_tower);
         SERIAL_ECHOLN(" has largest error");
         }
       if ((xy_equal == true) and (xz_equal == true) and (yz_equal == true))
@@ -1340,10 +1141,13 @@ int fix_tower_errors()
       }
      
     //Two tower errors
+    
+    /*
     if ((t1_err == true) and (t2_err == true) and (t3_err == false)) err_tower = 3;
     if ((t1_err == true) and (t2_err == false) and (t3_err == true)) err_tower = 2;
     if ((t1_err == false) and (t2_err == true) and (t3_err == true)) err_tower = 1;
-
+    */
+    
     //Single tower error
     if ((t1_err == true) and (t2_err == false) and (t3_err == false)) err_tower = 1;
     if ((t1_err == false) and (t2_err == true) and (t3_err == false)) err_tower = 2;
@@ -1366,6 +1170,7 @@ int fix_tower_errors()
     else
       {
       //If a tower has been adjusted previously.. continute to correct by adjusting that tower! (but only if the difference between the opp points is still large) 
+      /*
       if (high_opp - low_opp  > ac_prec * 2)
         {     
         if ((tower_adj[0] != 0) or (tower_adj[3] != 0))
@@ -1384,6 +1189,7 @@ int fix_tower_errors()
           err_tower = 3;
           }
         }
+      */
       SERIAL_ECHO("Tower");
       SERIAL_ECHO(int(err_tower));
       SERIAL_ECHOLN(" Error: Adjusting");
@@ -1397,388 +1203,168 @@ int fix_tower_errors()
 }
 
 int adj_deltaradius() 
-{
-  float adj_r;
-  float prev_c, prev_z;
-  int c_nochange_count = 0;
-  //int z_nochange_count = 0;
-  float nochange_r;
+{ 
+boolean adj_done; 
+int adj_attempts; 
+float adj_dRadius, bed_level_c, adjdone_vector; 
+
+bed_level_c = probe_bed(0.0, 0.0); 
+
+if (bed_level_c == 0)
+  {
+  SERIAL_ECHOLN("Delta Radius OK");
+  return 0;
+  }
+else
+  {
+  SERIAL_ECHOLN("Adjusting Delta Radius");
+
+  adj_attempts = 0; 
+  adj_dRadius = 0; 
+  adjdone_vector = start_prec; 
+
+  do 
+    { 
+    delta_radius += adj_dRadius; 
+    set_delta_constants(); 
+    adj_done = false; 
   
-  //if ((bed_level_c >= -ac_prec) and (bed_level_c <= ac_prec))
-  if ((bed_level_c >= -ac_prec/2) and (bed_level_c <= ac_prec/2))
-    {
-    SERIAL_ECHOLN("Delta Radius OK");
-    return 0;
-    }
-  else
-    {
-    SERIAL_ECHOLN("Adjusting Delta Radius");
-    //set inital direction and magnitude for delta radius adjustment
-    adj_r = -0.5;
-    if (bed_level_c < bed_level_z) adj_r = 0.5;
-    //if (bed_level_z > 0) adj_r = -0.1;
-    
-    bed_safe_z = 20;
-    
-    do
-      {
-      delta_radius += adj_r;
-      set_delta_constants();
-    
-      prev_c = bed_level_c;
-      prev_z = bed_level_z;
-      bed_level_c = probe_bed(0.0, 0.0);
-      bed_level_z = probe_bed(0.0, bed_radius);
-      
-      //Show progress
-      SERIAL_ECHO("r:");
-      SERIAL_PROTOCOL_F(delta_radius, 4);
-      SERIAL_ECHO(" (adj:");
-      SERIAL_PROTOCOL_F(adj_r,4);
-      SERIAL_ECHO(") c:");
-      SERIAL_PROTOCOL_F(bed_level_c, 4);
-      SERIAL_ECHO(" z:");
-      SERIAL_PROTOCOL_F(bed_level_z, 4);
-      SERIAL_ECHOLN("");
-   
-      //Adjust delta radius
-      //if (((adj_r > 0) and (bed_level_c < prev_c)) or ((adj_r < 0) and (bed_level_c > prev_c))) adj_r = -(adj_r / 2);
-      if (((bed_level_c > prev_c) and (bed_level_z > prev_z)) or ((bed_level_c < prev_c) and (bed_level_z < prev_z))) adj_r = -(adj_r / 2);
-      //if (abs(adj_r) < 0.0313) adj_r = adj_r * 2; 
-         
-      //Count iterations with no change to c probe point
-      if (bed_level_c == prev_c) c_nochange_count ++;
-      //if (bed_level_z == prev_z) z_nochange_count ++;
-      if (c_nochange_count == 1) nochange_r = delta_radius;
-      //if (z_nochange_count == 1) nochange_r = delta_radius;
+    if (adj_dRadius != 0) adj_endstops();  
+    bed_level_c = probe_bed(0, 0); 
 
-      } while(((bed_level_z < bed_level_c - 0.001) or (bed_level_z > bed_level_c + 0.001)) and (c_nochange_count < 3));
-      //} while(((bed_level_z < bed_level_c - ac_prec) or (bed_level_z > bed_level_c + ac_prec)) and (z_nochange_count < 3));
-      
-     
-     if (c_nochange_count > 0) 
-      //if (z_nochange_count > 0) 
-        {
-        delta_radius = nochange_r;
-        set_delta_constants();
-        bed_safe_z = 20;
-        }
-     
-    return 1;
-    }
-}
+    //Set inital adjustment value if it is currently 0 
+    if (adj_dRadius == 0) 
+      { 
+      if (bed_level_c > 0) adj_dRadius = -0.2; 
+      if (bed_level_c < 0) adj_dRadius = 0.2; 
+      } 
 
-/*
-int adj_deltaradius() 
-{
-  float adj_r;
-  //float prev_c;
-  float prev_z;
-  //int c_nochange_count = 0;
-  int z_nochange_count = 0;
-  float nochange_r;
+    //Adjustment complete? 
+    if ((bed_level_c >= -ac_prec) and (bed_level_c <= ac_prec)) 
+      { 
+      //Done to within acprec .. but done within adjdone_vector?   
+      if ((bed_level_c >= -adjdone_vector) and (bed_level_c <= adjdone_vector)) 
+        { 
+        adj_done = true; 
+        } 
+      else 
+        { 
+        adj_attempts ++; 
+        if (adj_attempts > 3) 
+          { 
+          start_prec = adjdone_vector;
+          adjdone_vector += 0.01; 
+          adj_attempts = 0; 
+          } 
+        } 
+      } 
+
+    //Show progress 
+    SERIAL_ECHO(" c: "); 
+    SERIAL_PROTOCOL_F(bed_level_c, 4); 
+    SERIAL_ECHO(" delta radius:"); 
+    SERIAL_PROTOCOL_F(delta_radius, 4); 
+    SERIAL_ECHO(" prec:"); 
+    SERIAL_PROTOCOL_F(adjdone_vector, 3); 
+    SERIAL_ECHO(" tries:"); 
+    SERIAL_ECHO(adj_attempts); 
+    SERIAL_ECHOLN(""); 
+    if (adj_done == true) SERIAL_ECHOLN(" done:true"); else SERIAL_ECHOLN(" done:false"); 
+
+    //Overshot target? .. reverse and scale down adjustment 
+    if (((bed_level_c < 0) and (adj_dRadius < 0)) or ((bed_level_c > 0) and (adj_dRadius > 0))) adj_dRadius = -(adj_dRadius / 2); 
   
-  //if ((bed_level_c >= -ac_prec) and (bed_level_c <= ac_prec))
-  if ((bed_level_c >= -ac_prec/2) and (bed_level_c <= ac_prec/2))
-    {
-    SERIAL_ECHOLN("Delta Radius OK");
-    return 0;
-    }
-  else
-    {
-    SERIAL_ECHOLN("Adjusting Delta Radius");
-    //set inital direction and magnitude for delta radius adjustment
-    adj_r = 0.5;
-    //if (bed_level_c > 0) adj_r = -0.1;
-    if (bed_level_z > bed_level_c) adj_r = -0.5;
-    
-    bed_safe_z = 20;
-    
-    do
-      {
-      delta_radius += adj_r;
-      set_delta_constants();
-    
-      //prev_c = bed_level_c;
-      prev_z = bed_level_z;
-      
-      bed_level_c = probe_bed(0.0, 0.0);
-      bed_level_z = probe_bed(0.0, bed_radius);
-      
-      //Show progress
-      SERIAL_ECHO("r:");
-      SERIAL_PROTOCOL_F(delta_radius, 4);
-      SERIAL_ECHO(" (adj:");
-      SERIAL_PROTOCOL_F(adj_r,4);
-      SERIAL_ECHO(") c:");
-      SERIAL_PROTOCOL_F(bed_level_c, 4);
-      SERIAL_ECHO(" z:");
-      SERIAL_PROTOCOL_F(bed_level_z, 4);
-      SERIAL_ECHOLN("");
-   
-      //Adjust delta radius
-      //if (((adj_r > 0) and (bed_level_c < prev_c)) or ((adj_r < 0) and (bed_level_c > prev_c))) adj_r = -(adj_r / 2);
-      if (((adj_r > 0) and (bed_level_z < prev_z)) or ((adj_r < 0) and (bed_level_z > prev_z))) adj_r = -(adj_r / 2);
-
-      //Count iterations with no change to c probe point
-      //if (bed_level_c == prev_c) c_nochange_count ++;
-      if (bed_level_z == prev_z) z_nochange_count ++;
-      //if (c_nochange_count == 1) nochange_r = delta_radius;
-      if (z_nochange_count == 1) nochange_r = delta_radius;
-
-      //} while(((bed_level_c < -ac_prec) or (bed_level_c > ac_prec)) and (c_nochange_count < 3));
-      } while(((bed_level_z < bed_level_c + ac_prec) or (bed_level_z > bed_level_c - ac_prec)) and (z_nochange_count < 10));
-      
-      //if (c_nochange_count > 0) 
-      if (z_nochange_count > 0) 
-        {
-        delta_radius = nochange_r;
-        set_delta_constants();
-        bed_safe_z = 20;
-        }
-    return 1;
-    }
+    } while (adj_done == false); 
+  return 1;
+  }
 }
-*/
 
 void adj_tower_radius(int tower)
 {
-boolean done,t1_done,t2_done,t3_done;
-float adj_Radius,adj_t1_Radius,adj_t2_Radius,adj_t3_Radius;
-float target;
-//Set inital tower adjustment values
-adj_t1_Radius = 0;
-adj_t2_Radius = 0;
-adj_t3_Radius = 0;
-if (tower == 1)
-{
-target = (bed_level_oy + bed_level_oz) / 2;
-//if (bed_level_ox < (target - bed_level_ox)/2) adj_t1_Radius = 0.5;
-//if (bed_level_ox > (target - bed_level_ox)/2) adj_t1_Radius = -0.5;
-if (bed_level_ox < target) adj_t1_Radius = 0.5;
-if (bed_level_ox > target) adj_t1_Radius = -0.5;
-}
-if (tower == 2)
-{
-target = (bed_level_ox + bed_level_oz) / 2;
-if (bed_level_oy < (target - bed_level_oy)/2) adj_t2_Radius = 0.5;
-if (bed_level_oy > (target - bed_level_oy)/2) adj_t2_Radius = -0.5;
-}
-if (tower == 3)
-{
-target = (bed_level_oy + bed_level_ox) / 2;
-if (bed_level_oz < (target - bed_level_oz)/2) adj_t3_Radius = 0.5;
-if (bed_level_oz > (target - bed_level_oz)/2) adj_t3_Radius = -0.5;
-}
+boolean adj_done;
+int adj_attempts;
+float adj_tRadius, bed_level, bed_level_o, adjdone_vector;
+
+adj_attempts = 0;
+adj_tRadius = 0;
+adjdone_vector = start_prec;
+
 do
-{
-tower_adj[3] += adj_t1_Radius;
-tower_adj[4] += adj_t2_Radius;
-tower_adj[5] += adj_t3_Radius;
-set_delta_constants();
-//done = false;
-t1_done = false;
-t2_done = false;
-t3_done = false;
-if (tower == 1)
-{
-t2_done = true;
-t3_done = true;
-bed_level_ox = probe_bed(SIN_60 * bed_radius, COS_60 * bed_radius);
-bed_level_oy = probe_bed(-SIN_60 * bed_radius, COS_60 * bed_radius);
-bed_level_oz = probe_bed(0.0, -bed_radius);
-target = (bed_level_oy + bed_level_oz) / 2;
-SERIAL_ECHO("oy = ");
-SERIAL_PROTOCOL_F(bed_level_oy,4);
-SERIAL_ECHOLN("");
-SERIAL_ECHO("oz = ");
-SERIAL_PROTOCOL_F(bed_level_oz,4);
-SERIAL_ECHOLN("");
-SERIAL_ECHO("target = ");
-SERIAL_PROTOCOL_F(target,4);
-SERIAL_ECHOLN("");
-if (((bed_level_ox < target) and (adj_t1_Radius > 0)) or ((bed_level_ox > target) and (adj_t1_Radius < 0))) adj_t1_Radius = -(adj_t1_Radius / 2);
-//if ((bed_level_ox > target - (ac_prec/2)) and (bed_level_ox < target + (ac_prec/2))) t1_done = true;
-if ((bed_level_ox > target - 0.01) and (bed_level_ox < target + 0.01)) t1_done = true;
-SERIAL_ECHO(" target:");
-SERIAL_PROTOCOL_F(target, 4);
-SERIAL_ECHO(" ox:");
-SERIAL_PROTOCOL_F(bed_level_ox, 4);
-SERIAL_ECHO("tower radius adj:");
-SERIAL_PROTOCOL_F(tower_adj[3], 4);
-if (t1_done == true) SERIAL_ECHOLN(" done:true"); else SERIAL_ECHOLN(" done:false");
-}
-if (tower == 2)
-{
-t1_done = true;
-t3_done = true;
-bed_level_ox = probe_bed(SIN_60 * bed_radius, COS_60 * bed_radius);
-bed_level_oy = probe_bed(-SIN_60 * bed_radius, COS_60 * bed_radius);
-bed_level_oz = probe_bed(0.0, -bed_radius);
-target = (bed_level_ox + bed_level_oz) /2;
-if (((bed_level_oy < target) and (adj_t2_Radius > 0)) or ((bed_level_oy > target) and (adj_t2_Radius < 0))) adj_t2_Radius = -(adj_t2_Radius / 2);
-//if ((bed_level_oy > target - (ac_prec/2)) and (bed_level_oy < target + (ac_prec/2))) t2_done = true;
-if ((bed_level_oy > target) and (bed_level_oy < target)) t2_done = true;
-SERIAL_ECHO(" target:");
-SERIAL_PROTOCOL_F(target,4);
-SERIAL_ECHO(" oy:");
-SERIAL_PROTOCOL_F(bed_level_oy,4);
-SERIAL_ECHO("tower radius adj:");
-SERIAL_PROTOCOL_F(tower_adj[4], 4);
-if (t2_done == true) SERIAL_ECHOLN(" done:true"); else SERIAL_ECHOLN(" done:false");
-}
-if (tower == 3)
-{
-t1_done = true;
-t2_done = true;
-bed_level_ox = probe_bed(SIN_60 * bed_radius, COS_60 * bed_radius);
-bed_level_oy = probe_bed(-SIN_60 * bed_radius, COS_60 * bed_radius);
-bed_level_oz = probe_bed(0.0, -bed_radius);
-target = (bed_level_oy + bed_level_ox) /2;
-if (((bed_level_oz < target) and (adj_t3_Radius > 0)) or ((bed_level_oz > target) and (adj_t3_Radius < 0))) adj_t3_Radius = -(adj_t3_Radius / 2);
-//if ((bed_level_oz > target - (ac_prec/2)) and (bed_level_oz < target + (ac_prec/2))) t3_done = true;
-if ((bed_level_oz > target) and (bed_level_oz < target)) t3_done = true;
-SERIAL_ECHO(" target:");
-SERIAL_PROTOCOL_F(target,4);
-SERIAL_ECHO(" oz:");
-SERIAL_PROTOCOL_F(bed_level_oz,4);
-SERIAL_ECHO("tower radius adj:");
-SERIAL_PROTOCOL_F(tower_adj[5], 4);
-if (t3_done == true) SERIAL_ECHOLN(" done:true"); else SERIAL_ECHOLN(" done:false");
-}
-} while ((t1_done == false) or (t2_done == false) or (t3_done == false));
-}
-
-/*
-void adj_tower_radius(int tower)
-{
-  boolean done,t1_done,t2_done,t3_done;
-  int nochange_count;
-  float target, prev_target, prev_bed_level;
-  float temp, adj_target;
+  {
+  tower_adj[tower + 2] += adj_tRadius;
+  set_delta_constants();
+  adj_done = false;
   
-    //Set inital tower adjustment values
-    adj_t1_Radius = 0;
-    adj_t2_Radius = 0;
-    adj_t3_Radius = 0;
-    nochange_count = 0;
-    
-    if ((tower == 1) and (adj_t1_Radius == 0))
-      {
-      target = (bed_level_oy + bed_level_oz) / 2;
-      //temp = (bed_level_ox - target) / 1.95;
-      temp = (bed_level_ox - target) / 2;
-      adj_target = bed_level_ox - temp;
-      if (bed_level_ox < adj_target) adj_t1_Radius = -1; //0.2; //0.4;
-      if (bed_level_ox > adj_target) adj_t1_Radius = 1; //0.2; //-0.4;     
-      }
-    if ((tower == 2) and (adj_t2_Radius == 0))
-      {
-      target = (bed_level_ox + bed_level_oz) / 2;
-      temp = (bed_level_oy - target) / 1.95;
-      adj_target = temp;
-      if (bed_level_oy < adj_target) adj_t2_Radius = -1; //0.2; //0.4;
-      if (bed_level_oy > adj_target) adj_t2_Radius = 1; //0.2; //-0.4;     
-      }
-    if ((tower == 3) and (adj_t3_Radius == 0))
-      {
-      target = (bed_level_oy + bed_level_ox) / 2;
-      temp = (bed_level_oz - target) / 1.95;
-      adj_target = temp;
-      if (bed_level_oz < adj_target) adj_t3_Radius = -1; //0.2; //0.4;
-      if (bed_level_oz > adj_target) adj_t3_Radius = 1; //0.2; //-0.4;       
-      }
-    
-    do
+  if (adj_tRadius != 0) adj_endstops();
+
+  if (tower == 1)
     {
-    tower_adj[3] += adj_t1_Radius;
-    tower_adj[4] += adj_t2_Radius;
-    tower_adj[5] += adj_t3_Radius;
-    set_delta_constants();
+    //Bedlevel_x
+    bed_level = probe_bed(-SIN_60 * bed_radius, -COS_60 * bed_radius);
+    //Bedlevel_ox
+    bed_level_o = probe_bed(SIN_60 * bed_radius, COS_60 * bed_radius);
+    }
+  if (tower == 2)
+    {
+    //Bedlevel_y
+    bed_level = probe_bed(SIN_60 * bed_radius, -COS_60 * bed_radius);
+    //Bedlevel_oy
+    bed_level_o = probe_bed(-SIN_60 * bed_radius, COS_60 * bed_radius);
+    }
+  if (tower == 3)
+    {
+    //Bedlevel_z
+    bed_level = probe_bed(0.0, bed_radius);
+    //Bedlevel_oz
+    bed_level_o = probe_bed(0.0, -bed_radius);
+    }
+ 
+  //Set inital adjustment value if it is currently 0
+  if (adj_tRadius == 0) 
+    {
+    if (bed_level_o < bed_level) adj_tRadius = -1;
+    if (bed_level_o > bed_level) adj_tRadius = 1;
+    }       
+ 
+  //Adjustment complete?
+  if ((bed_level_c >= -ac_prec) and (bed_level_c <= ac_prec)) 
+    { 
+    //Done to within acprec .. but done within adjdone_vector?   
+    if ((bed_level_o >= bed_level - adjdone_vector) and (bed_level_o <= bed_level + adjdone_vector)) 
+      { 
+      adj_done = true; 
+      } 
+    else 
+      { 
+      adj_attempts ++; 
+      if (adj_attempts > 3) 
+        { 
+        adjdone_vector += 0.01; 
+        adj_attempts = 0; 
+        } 
+      } 
+    } 
 
-    //done = false;   
-    t1_done = false;
-    t2_done = false;
-    t3_done = false;
-    if (tower == 1)
-      {  
-      t2_done = true;
-      t3_done = true;
-      prev_target = adj_target;
-      prev_bed_level = bed_level_ox;
+  //Show progress
+  SERIAL_ECHO(" tower: ");
+  SERIAL_PROTOCOL_F(bed_level, 4);
+  SERIAL_ECHO(" opptower:");
+  SERIAL_PROTOCOL_F(bed_level_o, 4);
+  SERIAL_ECHO(" tower radius adj:");
+  SERIAL_PROTOCOL_F(tower_adj[tower + 2], 4);
+  SERIAL_ECHO(" prec:"); 
+  SERIAL_PROTOCOL_F(adjdone_vector, 3); 
+  SERIAL_ECHO(" tries:"); 
+  SERIAL_ECHO(adj_attempts);
+  SERIAL_ECHOLN("");
+  if (adj_done == true) SERIAL_ECHOLN(" done:true"); else SERIAL_ECHOLN(" done:false");
 
-      bed_level_ox = probe_bed(SIN_60 * bed_radius, COS_60 * bed_radius);
-      //bed_level_oy = probe_bed(-SIN_60 * bed_radius, COS_60 * bed_radius);
-      //bed_level_oz = probe_bed(0.0, -bed_radius);
-      
-      //target = (bed_level_oy + bed_level_oz) / 2;
-      //temp = (bed_level_ox - target); // / 2;
-      //adj_target = target;// + temp;
-      if (((bed_level_ox < adj_target) and (adj_t1_Radius > 0)) or ((bed_level_ox > adj_target) and (adj_t1_Radius < 0))) adj_t1_Radius = -(adj_t1_Radius / 2);
-      if ((bed_level_ox > adj_target - 0.01) and (bed_level_ox < adj_target + 0.01)) t1_done = true;
-      SERIAL_ECHO(" target:");
-      SERIAL_PROTOCOL_F(adj_target, 6);
-      SERIAL_ECHO(" ox:");
-      SERIAL_PROTOCOL_F(bed_level_ox, 6);	
-      SERIAL_ECHO(" tower radius adj:");
-      SERIAL_PROTOCOL_F(tower_adj[3], 6);
-      if (t1_done == true) SERIAL_ECHOLN(" done:true"); else SERIAL_ECHOLN(" done:false");
-      }
-      
-    if (tower == 2)
-      {
-      t1_done = true;
-      t3_done = true;
-      prev_target = adj_target;
-      prev_bed_level = bed_level_oy;
+  //Overshot target? .. reverse and scale down adjustment
+  if (((bed_level_o < bed_level) and (adj_tRadius > 0)) or ((bed_level_o > bed_level) and (adj_tRadius < 0))) adj_tRadius = -(adj_tRadius / 2);
 
-      //bed_level_ox = probe_bed(SIN_60 * bed_radius, COS_60 * bed_radius);
-      bed_level_oy = probe_bed(-SIN_60 * bed_radius, COS_60 * bed_radius);
-      //bed_level_oz = probe_bed(0.0, -bed_radius);
-      
-      //target = (bed_level_ox + bed_level_oz) /2;
-      //temp = (bed_level_oy - target); // / 2;
-      //adj_target = target;// + temp;
-      if (((bed_level_oy < adj_target) and (adj_t2_Radius > 0)) or ((bed_level_oy > adj_target) and (adj_t2_Radius < 0))) adj_t2_Radius = -(adj_t2_Radius / 2);
-      if ((bed_level_oy > adj_target - 0.01) and (bed_level_oy < adj_target + 0.01)) t2_done = true;
-      
-      SERIAL_ECHO(" target:");
-      SERIAL_PROTOCOL_F(adj_target,4);
-      SERIAL_ECHO(" oy:");
-      SERIAL_PROTOCOL_F(bed_level_oy,4);     
-      SERIAL_ECHO(" tower radius adj:");
-      SERIAL_PROTOCOL_F(tower_adj[4], 4);
-      if (t2_done == true) SERIAL_ECHOLN(" done:true"); else SERIAL_ECHOLN(" done:false");
-      }
-      
-    if (tower == 3)
-      {
-      t1_done = true;
-      t2_done = true;
-      prev_target = adj_target;
-      prev_bed_level = bed_level_oz;
-      
-      //bed_level_ox = probe_bed(SIN_60 * bed_radius, COS_60 * bed_radius);
-      //bed_level_oy = probe_bed(-SIN_60 * bed_radius, COS_60 * bed_radius);
-      bed_level_oz = probe_bed(0.0, -bed_radius);
-          
-      //target = (bed_level_oy + bed_level_ox) / 2;
-      //temp = (bed_level_oz - target); // / 2;
-      //adj_target = target;// + temp;
-      if (((bed_level_oz < adj_target) and (adj_t3_Radius > 0)) or ((bed_level_oz > adj_target) and (adj_t3_Radius < 0))) adj_t3_Radius = -(adj_t3_Radius / 2);
-      if ((bed_level_oz > adj_target - 0.01) and (bed_level_oz < adj_target + 0.01)) t3_done = true;
-      SERIAL_ECHO(" target:");
-      SERIAL_PROTOCOL_F(adj_target,6);
-      SERIAL_ECHO(" oz:");
-      SERIAL_PROTOCOL_F(bed_level_oz,6);
-      SERIAL_ECHO(" tower radius adj:");
-      SERIAL_PROTOCOL_F(tower_adj[5], 6);
-      if (t3_done == true) SERIAL_ECHOLN(" done:true"); else SERIAL_ECHOLN(" done:false");
-      }      
-      
-   } while ((t1_done == false) or (t2_done == false) or (t3_done == false));
+  } while (adj_done == false);
 }
-*/
+
 void adj_tower_delta(int tower)
 {
    float adj_val = 0;
@@ -2179,12 +1765,10 @@ void bed_probe_all()
   destination[Z_AXIS] = bed_safe_z;
   prepare_move_raw();
   st_synchronize();
-  
+  //Inital throwaway probe.. used to stabilize probe
+  bed_level_c = probe_bed(0.0, 0.0); 
+    
   //Probe all bed positions & store carriage positions
-  bed_level_c = probe_bed(0.0, 0.0);      
-  save_carriage_positions(0);
-  //bed_safe_z = bed_level_c + 2;
-  //SERIAL_ECHOPAIR("6.bed_safe_z = ",bed_safe_z);
   bed_level_z = probe_bed(0.0, bed_radius);
   save_carriage_positions(1);
   bed_level_oy = probe_bed(-SIN_60 * bed_radius, COS_60 * bed_radius);
@@ -2197,7 +1781,11 @@ void bed_probe_all()
   save_carriage_positions(5);
   bed_level_ox = probe_bed(SIN_60 * bed_radius, COS_60 * bed_radius);
   save_carriage_positions(6);    
-  }
+  bed_level_c = probe_bed(0.0, 0.0);      
+  save_carriage_positions(0);  
+  bed_safe_z = bed_level_c + 2;
+  //SERIAL_ECHOPAIR("6.bed_safe_z = ",bed_safe_z);
+}
   
 void calibration_report()
   {
@@ -2665,7 +2253,7 @@ void process_commands()
          {  
          int err_tower;
          int iteration = 0;
-               
+                       
          do {
             iteration ++;
             SERIAL_ECHO("Iteration: ");
@@ -2714,35 +2302,42 @@ void process_commands()
          int err_tower;
          int iteration = 0;
          int dr_adjusted;
-       //do {
+         boolean all_done;
+         //int all_done_count=0;
+   
          do {       
             do {
                iteration ++;
                SERIAL_ECHO("Iteration: ");
                SERIAL_ECHOLN(iteration);              
 
-               SERIAL_ECHOLN("Checking/Adjusting endstop offsets");
-               adj_endstops();             
-                               
+               if ((bed_level_x < -start_prec) or (bed_level_x > start_prec)
+                 or (bed_level_y < -start_prec) or (bed_level_y > start_prec)
+                 or (bed_level_z < -start_prec) or (bed_level_z > start_prec))
+                 {
+                 SERIAL_ECHOLN("Adjusting endstop offsets");
+                 adj_endstops();             
+                 }
+                             
                bed_probe_all();
                calibration_report();
 
-               if ((bed_level_c < -ac_prec) or (bed_level_c > ac_prec))
+               if ((bed_level_c < -start_prec) or (bed_level_c > start_prec))
                  {
                  SERIAL_ECHOLN("Checking delta radius");
                  dr_adjusted = adj_deltaradius();
                  }
                else dr_adjusted = 0;
                
-               } while ((bed_level_c < -ac_prec) or (bed_level_c > ac_prec)
-                         or (bed_level_x < -ac_prec) or (bed_level_x > ac_prec)
-                         or (bed_level_y < -ac_prec) or (bed_level_y > ac_prec)
-                         or (bed_level_z < -ac_prec) or (bed_level_z > ac_prec)
+               } while ((bed_level_c < -start_prec) or (bed_level_c > start_prec)
+                         or (bed_level_x < -start_prec) or (bed_level_x > start_prec)
+                         or (bed_level_y < -start_prec) or (bed_level_y > start_prec)
+                         or (bed_level_z < -start_prec) or (bed_level_z > start_prec)
                          or (dr_adjusted != 0));
              
-             if ((bed_level_ox < -ac_prec) or (bed_level_ox > ac_prec) or
-                 (bed_level_oy < -ac_prec) or (bed_level_oy > ac_prec) or
-                 (bed_level_oz < -ac_prec) or (bed_level_oz > ac_prec))
+             if ((bed_level_ox < -start_prec) or (bed_level_ox > start_prec) or
+                 (bed_level_oy < -start_prec) or (bed_level_oy > start_prec) or
+                 (bed_level_oz < -start_prec) or (bed_level_oz > start_prec))
                {
                SERIAL_ECHOLN("Checking for tower geometry errors.."); 
                if (fix_tower_errors() != 0 )
@@ -2766,16 +2361,37 @@ void process_commands()
                bed_probe_all();
                calibration_report();
                }
-              
-             } while((bed_level_c < -ac_prec) or (bed_level_c > ac_prec)
-                  or (bed_level_x < -ac_prec) or (bed_level_x > ac_prec)
-                  or (bed_level_y < -ac_prec) or (bed_level_y > ac_prec)
-                  or (bed_level_z < -ac_prec) or (bed_level_z > ac_prec)
-                  or (bed_level_ox < -ac_prec) or (bed_level_ox > ac_prec)
-                  or (bed_level_oy < -ac_prec) or (bed_level_oy > ac_prec)
-                  or (bed_level_oz < -ac_prec) or (bed_level_oz > ac_prec));
-         
-         SERIAL_ECHOLN("Autocalibration Complete");
+             all_done = true;
+             if ((bed_level_c < -start_prec) or (bed_level_c > start_prec)
+                  or (bed_level_x < -start_prec) or (bed_level_x > start_prec)
+                  or (bed_level_y < -start_prec) or (bed_level_y > start_prec)
+                  or (bed_level_z < -start_prec) or (bed_level_z > start_prec)
+                  or (bed_level_ox < -start_prec) or (bed_level_ox > start_prec)
+                  or (bed_level_oy < -start_prec) or (bed_level_oy > start_prec)
+                  or (bed_level_oz < -start_prec) or (bed_level_oz > start_prec)) all_done = false;
+             
+             /*
+             if (all_done == false)
+                {
+                all_done_count ++; 
+                if (all_done_count > 3) 
+                  { 
+                  SERIAL_ECHO("Unable to achive precision +/- ");
+                  SERIAL_PROTOCOL_F(start_prec,3);
+                  SERIAL_ECHOLN("mm");
+                  start_prec += 0.01; 
+                  all_done_count = 0;
+                  SERIAL_ECHO("Reducing Precision to +/- ");
+                  SERIAL_PROTOCOL_F(start_prec,3);
+                  SERIAL_ECHOLN("mm");
+                  } 
+                }
+             */
+             } while(all_done == false);
+             
+         SERIAL_ECHO("Autocalibration Complete (Precision achived +/- ");
+         SERIAL_PROTOCOL_F(start_prec,3);
+         SERIAL_ECHOLN("mm)"); 
          }
          
   	retract_z_probe();
